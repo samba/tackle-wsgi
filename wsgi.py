@@ -17,10 +17,15 @@ logger.addHandler(logging.StreamHandler())
 
 
 def stripfirst(char, text):
-    if text.startswith(char):
-        return text[len(char):]
-    else:
-        return text
+    while text.startswith(char):
+        text = text[len(char):]
+    return text
+
+def striplast(char, text):
+    while text.endswith(char):
+        text = text[:-len(char)]
+    return text
+
 
 
 class RequestInfo(object):
@@ -55,6 +60,15 @@ class RequestInfo(object):
     def path_qs(self):
         return self.path + self.query
 
+
+
+class ResponseExtension(Response):
+
+    def set_status(self, code, message = None):
+        if isinstance(message, basestring):
+            self.status = '%d %s' % (code, message)
+        else:
+            self.status = code
 
 
 
@@ -150,7 +164,8 @@ class WSGIRoute(object):
 
     @cached_property
     def template(self):
-        return self.RE_PARSE_PATH.sub(r"\1", self.path)
+        base = self.RE_PARSE_PATH.sub(r"{\1}", self.path)
+        return striplast('$', stripfirst('^', base))
 
     @cached_property
     def matchpattern(self):
@@ -182,6 +197,13 @@ class WSGIRouter(object):
         route_name = getattr(route, 'name', None)
         if route_name:
             self.named_routes[route_name] = route
+
+
+    def resolve_route_to_url(self, name, **props):
+        if name not in self.named_routes:
+            raise KeyError("Could not find the route named %r" % name)
+
+        return self.named_routes[name].template.format(**props)
 
     def dispatch(self, environ, request):
         for r in self.routes:
@@ -217,16 +239,19 @@ class WSGIApplication(object):
         return _decorator
 
 
+    def url_for(self, *args, **kwargs):
+        return self.router.resolve_route_to_url(*args, **kwargs)
+
     def __call__(self, environ, start_response):
         request = Request(environ)
         try:
             match, handler = self.router.dispatch(environ, request)
             if issubclass(handler, self.requesthandler_class):
-                handler = (handler(request, Response(), match))
+                handler = (handler(request, ResponseExtension(), match))
                 return handler(environ, start_response)
 
             elif callable(handler):
-                response = Response(handler(request, match))
+                response = ResponseExtension(handler(request, match))
 
         except exceptions.HTTPException, e:
             response = e
@@ -330,6 +355,7 @@ class RedirectionMiddleware(Middleware):
 
     def run_before(self, environ, start_response):
         info = RequestInfo(environ)
+        status = [ "302 Temporary Redirect", "301 Permanent Redirect" ]
 
         for pattern, target, permanent in self._map:
             match = pattern.match(info.path)
@@ -347,8 +373,7 @@ class RedirectionMiddleware(Middleware):
                     'path_qs': info.path_qs
                 })
                 result = urlparse.urlunsplit(parts).format(*args, **kwargs)
-                status = "301 Permanent Redirect" if permanent else "302 Temporary Redirect"
-                start_response(status, [('Location', result)])
+                start_response(status[int(permanent)], [('Location', result)])
                 return 'Redirecting to %s' % result
 
 
