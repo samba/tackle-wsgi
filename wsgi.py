@@ -7,6 +7,7 @@ from util import cached_property
 import re
 import os
 
+import urlparse
 
 import logging
 
@@ -15,8 +16,18 @@ logger.setLevel(logging.DEBUG)
 logger.addHandler(logging.StreamHandler())
 
 
+def stripfirst(char, text):
+    if text.startswith(char):
+        return text[len(char):]
+    else:
+        return text
+
 
 class RequestInfo(object):
+    """ Simple interface for picking out request components.
+        This replicates some behaviors already present within webob.
+    """
+
 
     @classmethod
     def gethostname(cls, environ):
@@ -34,6 +45,17 @@ class RequestInfo(object):
         script = self.environ.get('SCRIPT_NAME', '')
         path = self.environ.get('PATH_INFO', '')
         return script + path
+
+    @property
+    def query(self):
+        qs = self.environ.get('QUERY_STRING', '')
+        return ('?' + qs) if qs else qs
+
+    @property
+    def path_qs(self):
+        return self.path + self.query
+
+
 
 
 
@@ -279,6 +301,56 @@ class Middleware(object):
             return result
         else:
             return intercept
+
+
+
+class RedirectionMiddleware(Middleware):
+    """ WSGI Middleware to intercept requests that should be redirected.
+        Supports Regular Expressions patterns for extracting parts from
+        URLs intercepted, and format strings for target URLs.
+
+
+        Usage:
+            redir = RedirectionMiddleware()
+            redir.redirect('^/cdn/(.*)', 'http://cdn.host.com/{1}')
+            app = redir.wsgi(upstream_app)
+
+    """
+
+
+    def __init__(self, retain_path = False, retain_query = True):
+        self.retain_path = retain_path
+        self.retain_query = retain_query
+        self._map = []
+
+    def redirect(self, detect, target, permanent = False):
+        self._map.append((re.compile(detect), target, permanent))
+
+
+
+    def run_before(self, environ, start_response):
+        info = RequestInfo(environ)
+
+        for pattern, target, permanent in self._map:
+            match = pattern.match(info.path)
+            if match is not None:
+                args, kwargs = match.groups(), match.groupdict()
+                parts = list(urlparse.urlsplit(target))
+                if self.retain_query:
+                    parts[3] = stripfirst('?', info.query)
+                if self.retain_path:
+                    parts[2] = info.path
+                kwargs.update({
+                    'hostname': info.hostname,
+                    'path': info.path,
+                    'query': info.query,
+                    'path_qs': info.path_qs
+                })
+                result = urlparse.urlunsplit(parts).format(*args, **kwargs)
+                status = "301 Permanent Redirect" if permanent else "302 Temporary Redirect"
+                start_response(status, [('Location', result)])
+                return 'Redirecting to %s' % result
+
 
 
 
