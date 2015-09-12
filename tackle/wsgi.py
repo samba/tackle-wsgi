@@ -1,3 +1,7 @@
+# Core WSGI architectural layers.
+# Copyright (c) 2015, Sam Briesemeister
+# This code is not yet licensed for redistribution, and no warranty is provided for its use.
+
 
 from webob import exc as exceptions
 from webob import Request, Response

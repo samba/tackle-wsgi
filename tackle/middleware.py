@@ -1,3 +1,8 @@
+# WSGI middleware layers.
+# Copyright (c) 2015, Sam Briesemeister
+# This code is not yet licensed for redistribution, and no warranty is provided for its use.
+
+
 from tackle.wsgi import sendfile
 from tackle.wsgi import RequestInfo
 from tackle.util import stripfirst

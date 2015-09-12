@@ -83,7 +83,7 @@ Currently there are no artificial constraints on HTTP verbs that will be attempt
 
 A simple, generic Middleware model is provided. Any middleware derived from this class can implement one or both of the methods illustrated below, `run_before` or `run_after`.
 
-```
+```python
 from tackle import Middleware, WSGIApplication
 
 class CustomMiddleware(Middleware):
