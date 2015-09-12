@@ -27,6 +27,7 @@ class cached_property(object):
        in __get__ for manual invocation.
 
     This class was ported from `Werkzeug`_ and `Flask`_.
+    Borrowed from `webapp-improved`_.
     """
 
     _default_value = object()
