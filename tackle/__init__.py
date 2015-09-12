@@ -1,3 +1,4 @@
+
 from shortener import Shortener
 from util import cached_property
 from wsgi import (
@@ -9,6 +10,14 @@ from wsgi import (
     StaticFileMiddleware,
     sendfile
 )
+
+__version__ = '0.0.1'
+__author__ = [
+    'Sam Briesemeister <sam.briesemeister@gmail.com>'
+]
+
+__license__ = None
+
 
 
 __all__ = [
