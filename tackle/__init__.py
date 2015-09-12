@@ -5,10 +5,14 @@ from wsgi import (
     WSGIService,
     WSGIApplication,
     WSGIRequestHandler as RequestHandler,
+    sendfile
+)
+
+from middleware import (
     Middleware,
     RedirectionMiddleware,
     StaticFileMiddleware,
-    sendfile
+    Shortener
 )
 
 __version__ = '0.0.1'
@@ -16,12 +20,5 @@ __author__ = [
     'Sam Briesemeister <sam.briesemeister@gmail.com>'
 ]
 
-__license__ = None
+__license__ = "Copyright Sam Briesemeister, 2015"
 
-
-
-__all__ = [
-    "WSGIService", "WSGIApplication", "RequestHandler",
-    "Middleware", "RedirectionMiddleware", "StaticFileMiddleware",
-    "sendfile"
-]

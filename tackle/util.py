@@ -1,6 +1,18 @@
 import threading
 
 
+def stripfirst(char, text):
+    while text.startswith(char):
+        text = text[len(char):]
+    return text
+
+
+def striplast(char, text):
+    while text.endswith(char):
+        text = text[:-len(char)]
+    return text
+
+
 class cached_property(object):
     """A decorator that converts a function into a lazy property.
 
