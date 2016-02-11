@@ -43,5 +43,7 @@ setup(
     install_requires = [str(r.req) for r in requirements],
     include_package_data = True,
     scripts = [],
-    zip_safe = True
+    zip_safe = True,
+
+    url = "https://github.com/samba/tackle-wsgi/"
 )
