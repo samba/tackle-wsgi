@@ -1,2 +1,5 @@
 release-version
 *.pyc
+dist
+build
+*.egg-info
