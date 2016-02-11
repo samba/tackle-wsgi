@@ -30,10 +30,10 @@ remove uninstall:
 	sudo pip uninstall ${PACKAGE}
 
 build: git-status-clean
-	python setup.py check build sdist bdist
+	python setup.py check build 
 
 upload: build
-	python setup.py ${DRYRUN} sdist bdist upload
+	python setup.py ${DRYRUN} build sdist bdist upload
 
 
 release-version: git-status-clean
