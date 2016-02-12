@@ -8,7 +8,9 @@ import unittest
 import contextlib
 import coverage as lib_coverage
 import logging
-
+import pdb
+import functools
+import traceback
 
 
 def dirname_up(path, howmany = 1):
@@ -16,6 +18,23 @@ def dirname_up(path, howmany = 1):
         path = os.path.dirname(path)
         howmany = howmany - 1
     return path
+
+
+def debug_on(*exceptions):
+    if not exceptions:
+        exceptions = (AssertionError, )
+
+    def decorator(f):
+        @functools.wraps(f)
+        def wrapper(*args, **kwargs):
+            try:
+                return f(*args, **kwargs)
+            except exceptions:
+                info = sys.exc_info()
+                traceback.print_exception(*info)
+                pdb.post_mortem(info[2])
+        return wrapper
+    return decorator
 
 
 class TestApp(webtest.TestApp):
@@ -50,6 +69,8 @@ def ApplicationTestCase(app):
         def assertResponseBodyIs(self, response, content):
             self.assertEqual(response.normal_body, content)
 
+        def assertResponseBodyContains(self, response, content):
+            self.assertIn(content, response.normal_body)
 
     return TestCase
 
