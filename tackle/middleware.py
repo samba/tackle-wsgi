@@ -1,6 +1,6 @@
 # WSGI middleware layers.
 # Copyright (c) 2015, Sam Briesemeister
-# This code is not yet licensed for redistribution, and no warranty is provided for its use.
+# Licensed under the Python Software Foundation License.
 
 
 from tackle.wsgi import sendfile

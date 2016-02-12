@@ -1,6 +1,2 @@
+This project has adopted the Python Software Foundation License.
 Copyright (c) 2015 by Sam Briesemeister, with exceptions noted.
-
-I haven't yet chosen a proper open-source license for this project.
-
-The code is not yet licensed for redistribution, and certainly there is no warranty provided if you choose to use it.
-
