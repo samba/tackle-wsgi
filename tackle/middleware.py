@@ -79,7 +79,7 @@ class RedirectionMiddleware(Middleware):
                 args, kwargs = match.groups(), match.groupdict()
                 parts = list(urlparse.urlsplit(target))
                 if self.retain_query:
-                    parts[3] = stripfirst('?', info.query)
+                    parts[3] = stripfirst('?', info.query or parts[3])
                 if self.retain_path:
                     parts[2] = info.path
                 kwargs.update({
@@ -90,7 +90,7 @@ class RedirectionMiddleware(Middleware):
                 })
                 result = urlparse.urlunsplit(parts).format(*args, **kwargs)
                 start_response(status[int(permanent)], [('Location', result)])
-                return 'Redirecting to %s' % result
+                return ['Redirecting to %s' % result]
 
 
 
@@ -120,6 +120,10 @@ class StaticFileMiddleware(Middleware):
 
     @classmethod
     def cache_life(cls, filename):
+        """ Look up the effective cache life of a given filename. """
+        for pattern, content_type, duration in cls.match_content_types:
+            if re.search(pattern, filename):
+                return duration
         return cls.default_cache_life
 
     def run_before(self, environ, start_response):
