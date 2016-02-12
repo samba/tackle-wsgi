@@ -18,7 +18,7 @@ endif
 .PHONY: install clean uninstall build upload test git-status-clean
 
 clean:
-	rm -vf release-version 
+	-rm -rvf release-version build dist *.egg-info
 
 git-status-clean:
 	test "${GIT_STATUS}" == "clean" || (echo "GIT STATUS NOT CLEAN"; exit 1) >&2
@@ -30,10 +30,15 @@ remove uninstall:
 	sudo pip uninstall ${PACKAGE}
 
 build: git-status-clean
-	python setup.py check build 
+	python setup.py check build sdist bdist bdist_egg
 
-upload: build
-	python setup.py ${DRYRUN} build sdist bdist upload
+README.txt: README.md
+	echo "### Make sure Pandoc is installed, https://github.com/jgm/pandoc/releases/ ">&2
+	pandoc -f markdown_github -t rst -o $@ $< 
+
+
+upload: README.txt git-status-clean
+	python setup.py check build sdist bdist bdist_egg upload
 
 
 release-version: git-status-clean
