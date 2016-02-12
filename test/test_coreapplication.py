@@ -1,10 +1,10 @@
 #!/usr/bin/python
 
 from tackle import WSGIApplication, RequestHandler
+from tackle import RedirectionMiddleware
 from runner import ApplicationTestCase
 
 app = WSGIApplication()
-
 
 @app.route('/')
 class MainRequestHandler(RequestHandler):
@@ -20,6 +20,10 @@ class MainRequestHandler(RequestHandler):
 
         return whatever or 'NOT GIVEN'
 
+redir = RedirectionMiddleware()
+redir.redirect(r'^/wompwompwomp', 'http://google.com/search?q=womp')
+
+app = redir.wsgi(app)
 
 class TestCaseAlpha(ApplicationTestCase(app)):
     def testRootQuery(self):
@@ -34,3 +38,8 @@ class TestCaseAlpha(ApplicationTestCase(app)):
     def testPostQueryInvalid(self):
         resp = self.application.post('/', {'another': '2'}, status=404)
         self.assertResponseBodyIs(resp, 'NOT GIVEN')
+
+    def testRedirect(self):
+        resp = self.application.get('/wompwompwomp', status=302)
+        self.assertResponseStatus(resp, 302)
+        self.assertIn('?q=womp', resp.headers.get('Location'))
