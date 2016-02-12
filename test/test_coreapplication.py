@@ -6,7 +6,8 @@ from runner import ApplicationTestCase
 
 app = WSGIApplication()
 
-@app.route('/')
+
+@app.route(r'^/$')  # NOTE: these are anchored to match only the root...
 class MainRequestHandler(RequestHandler):
     def get(self):
         return 'Hi there!'
@@ -20,10 +21,19 @@ class MainRequestHandler(RequestHandler):
 
         return whatever or 'NOT GIVEN'
 
+
+@app.route('/test/<anything>')
+class SecondRequestHandler(RequestHandler):
+    def get(self, anything = None):
+        return "(%s)" % anything
+
+
+
 redir = RedirectionMiddleware()
 redir.redirect(r'^/wompwompwomp', 'http://google.com/search?q=womp')
 
 app = redir.wsgi(app)
+
 
 class TestCaseAlpha(ApplicationTestCase(app)):
     def testRootQuery(self):
@@ -43,3 +53,7 @@ class TestCaseAlpha(ApplicationTestCase(app)):
         resp = self.application.get('/wompwompwomp', status=302)
         self.assertResponseStatus(resp, 302)
         self.assertIn('?q=womp', resp.headers.get('Location'))
+
+    def testTemplatePath(self):
+        resp = self.application.get('/test/womp2', status=200)
+        self.assertResponseBodyIs(resp, '(womp2)')
