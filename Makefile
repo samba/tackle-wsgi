@@ -6,7 +6,7 @@ GIT_BRANCH = $(shell git describe --contains --all HEAD)
 GIT_COMMIT = $(shell git log -1 "--pretty=format:%H")
 GIT_STATUS = $(shell git status -sb --untracked=no | wc -l | awk '{ if($$1 == 1){ print "clean" } else { print "pending" } }')
 
-DRYRUN ?= true 
+DRYRUN ?= true
 
 ifeq ($(DRYRUN),false)
 	DRYRUN=
@@ -34,7 +34,7 @@ build: git-status-clean
 
 README.txt: README.md
 	echo "### Make sure Pandoc is installed, https://github.com/jgm/pandoc/releases/ ">&2
-	pandoc -f markdown_github -t rst -o $@ $< 
+	pandoc -f markdown_github -t rst -o $@ $<
 
 
 upload: README.txt git-status-clean
@@ -44,3 +44,6 @@ upload: README.txt git-status-clean
 release-version: git-status-clean
 	python -c "from tackle import __version__; print __version__"  > $@
 	git tag `cat $@`
+
+test:
+	python test/runner.py  ./test/
