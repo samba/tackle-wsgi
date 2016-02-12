@@ -14,10 +14,10 @@ from middleware import (
     Shortener
 )
 
-__version__ = '0.0.1'
+__version__ = '0.0.1b'
 __author__ = [
     'Sam Briesemeister <sam.briesemeister@gmail.com>'
 ]
 
-__license__ = "Copyright Sam Briesemeister, 2015"
+__license__ = "Python Software Foundation"
 
