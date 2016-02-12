@@ -69,7 +69,7 @@ class FileWrapper(object):
 
     def __init__(self, filelike, blksize=8192):
         if not callable(getattr(filelike, 'read', None)):
-            raise TypeError("response.FileWrapper requires a file-like object")
+            raise TypeError("wsgi.FileWrapper requires a file-like object")
 
         self.filelike = filelike
         self.blksize = blksize
@@ -166,7 +166,7 @@ class WSGIRoute(object):
             if name:
                 return '(?P<%s>%s)' % (name, (pattern or '[^/]+'))
             else:
-                return '(%s)' % pattern
+                return '(%s)' % (pattern or '[^/]+')
         return re.compile(self.RE_PARSE_PATH.sub(_sub, self.path))
 
     def match(self, path):
@@ -239,14 +239,16 @@ class WSGIApplication(object):
         try:
             match, handler = self.router.dispatch(environ, request)
             if issubclass(handler, self.requesthandler_class):
+                # Create an instance of the handler's subclass
                 handler = (handler(request, ResponseExtension(), match))
+                # Invoke the instance's __call__ method
                 return handler(environ, start_response)
 
             elif callable(handler):
                 response = ResponseExtension(handler(request, match))
 
         except exceptions.HTTPException, e:
-            response = e
+            response = e  # WebOb provides response-handling on exceptions.
 
         return response(environ, start_response)
 
