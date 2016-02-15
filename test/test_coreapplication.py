@@ -29,10 +29,9 @@ class SecondRequestHandler(RequestHandler):
 
 
 
-redir = RedirectionMiddleware()
+redir = RedirectionMiddleware(app)
 redir.redirect(r'^/wompwompwomp', 'http://google.com/search?q=womp')
 
-app = redir.wsgi(app)
 
 
 class TestCaseAlpha(ApplicationTestCase(app)):

@@ -5,6 +5,8 @@
 
 from tackle.wsgi import sendfile
 from tackle.wsgi import RequestInfo
+from tackle.wsgi import WSGIMiddlewareBase
+from tackle.wsgi import logger
 from tackle.util import stripfirst
 
 import os
@@ -12,36 +14,9 @@ import re
 import urlparse
 
 
-class Middleware(object):
+class Middleware(WSGIMiddlewareBase):
 
-    def __init__(self, *args, **options):
-        self.arguments = args
-        self.options = options
-
-    def run_before(self, environ, start_response):
-        pass
-
-    def run_after(self, environ, start_response, result):
-        return result
-
-    def wsgi(self, app):
-        def __wrapper__(environ, start_response):
-            intercept = self.run_before(environ, start_response)
-            if not intercept:
-                result = app(environ, start_response)
-                result = self.run_after(environ, start_response, result)
-                return result
-            else:
-                return intercept
-        return __wrapper__
-
-    def __call__(self, environ, start_response):
-        intercept = self.run_before(environ, start_response)
-        if not intercept:
-            result = self.run_after(environ, start_response, intercept)
-            return result
-        else:
-            return intercept
+    pass
 
 
 
@@ -59,7 +34,8 @@ class RedirectionMiddleware(Middleware):
     """
 
 
-    def __init__(self, retain_path = False, retain_query = True):
+    def middleware_init(self, retain_path = False, retain_query = True):
+        # logger.info('middleware_init %r' % self)
         self.retain_path = retain_path
         self.retain_query = retain_query
         self._map = []
@@ -106,6 +82,9 @@ class StaticFileMiddleware(Middleware):
         (r'\.css$', 'text/css', default_cache_life)
     ]
 
+    def middleware_init(self, *args, **opts):
+        self.static_path = args[0] if len(args) else None
+        self.static_prefix = args[1] if len(args) > 1 else None
 
 
     def get_headers(self, filename):
@@ -128,7 +107,7 @@ class StaticFileMiddleware(Middleware):
 
     def run_before(self, environ, start_response):
         info = RequestInfo(environ)
-        static_path, prefix = self.arguments
+        static_path, prefix = self.static_path, self.static_prefix
         path = info.path
 
         if prefix and path.startswith(prefix):
@@ -163,7 +142,7 @@ class Shortener(RedirectionMiddleware):
     """
 
 
-    def __init__(self, *args, **kwargs):
+    def middleware_init(self, *args, **kwargs):
         self.basepath = kwargs.pop('basepath', '/')
         super(Shortener, self).__init__(*args, **kwargs)
 

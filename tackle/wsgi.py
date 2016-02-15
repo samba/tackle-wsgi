@@ -228,6 +228,7 @@ class WSGIApplication(object):
     route_class = WSGIRoute
 
     def __init__(self, *routes, **options):
+        self.wsgi_stack = [ self.wsgi_main ]
         self.router = self.router_class(self)
         for route in routes:
             if isinstance(route, self.route_class):
@@ -252,7 +253,7 @@ class WSGIApplication(object):
     def url_for(self, *args, **kwargs):
         return self.router.resolve_route_to_url(*args, **kwargs)
 
-    def __call__(self, environ, start_response):
+    def wsgi_main(self, environ, start_response):
         request = Request(environ)
         try:
             match, handler = self.router.dispatch(environ, request)
@@ -269,6 +270,92 @@ class WSGIApplication(object):
             response = e  # WebOb provides response-handling on exceptions.
 
         return response(environ, start_response)
+
+    def wsgiloop(self, environ, start_response):
+        pass_result, state = False, None
+        for handler in self.wsgi_stack:
+            if callable(handler):
+                if pass_result:
+                    # follow-up middleware receive the preceding state
+                    state = handler(environ, start_response, state)
+                else:
+                    # middleware running before the main router does not.
+                    state = handler(environ, start_response)
+                if handler is self.wsgi_main:
+                    # follow-up middleware receive the preceding state
+                    pass_result = True
+                if state is not None:
+                    break
+        return state
+
+
+    def __call__(self, environ, start_response):
+        return self.wsgiloop(environ, start_response)
+
+
+
+class WSGIMiddlewareBase(object):
+    """A callable, WSGI-compatible base class for intercepting requests.
+        Injects middleware feature methods through inheritance chain for
+        instances of WSGIApplication.
+    """
+
+    def __new__(cls, app, *args, **opts):
+        if isinstance(app, (WSGIApplication, WSGIMiddlewareBase)):
+            # logger.info('Attaching features %r to %r' % (cls, app))
+            _name = app.__class__.__name__
+            class _feature(cls, app.__class__):
+                pass
+
+            app.__class__ = _feature
+            cls.__init__(app, app, *args, **opts)
+            app.wsgi_stack.insert(0, super(_feature, app).run_before)
+            app.wsgi_stack.append(super(_feature, app).run_after)
+
+            return app
+
+        elif callable(app):
+            logger.info('Creating middleware %r for %r' % (cls, app))
+            instance = object.__new__(cls, app, *args, **opts)
+            instance.__call__ = instance.wsgi
+            return instance
+
+
+
+    def __init__(self, app, *args, **opts):
+        self.upstream = app
+        # self.arguments = args
+        # self.options = opts
+        # logger.info('Initializing middleware %r on app %r' % (self, app))
+        self.middleware_init(*args, **opts)
+
+    def middleware_init(self, *args, **opts):
+        pass
+
+    def run_before(self, environ, start_response, state = None):
+        return state
+
+    def run_after(self, environ, start_response, result):
+        return result
+
+    def wsgi(self, environ, start_response):
+        intercept = self.run_before(environ, start_response)
+        if not intercept:
+            result = self.upstream(environ, start_response)
+            result = self.run_after(environ, start_response, result)
+            return result
+        else:
+            return intercept
+
+
+def BuildApplication(*middlewares):
+    """Constructs a WSGI Application & applies middlewares."""
+    app = WSGIApplication()
+    for m in middlewares:
+        if issubclass(m, WSGIMiddlewareBase):
+            app = m(app)
+    return app
+
 
 
 
