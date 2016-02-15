@@ -82,6 +82,16 @@ class FileWrapper(object):
             return data
         raise IndexError
 
+    def __iter__(self):
+        i = 0
+        while True:
+            try:
+                yield self[i]
+                i = i + 1
+            except IndexError:
+                break
+
+
 
 
 def sendfile(environ, filepath):
