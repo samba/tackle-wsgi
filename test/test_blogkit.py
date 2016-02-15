@@ -6,6 +6,8 @@ from tackle.blog import BlogRequestHandler, BlogIndex
 
 app = WSGIApplication()
 
+import sys
+
 
 class Blog(BlogRequestHandler):
     CONTENT_PATH = 'test/blog_content'
@@ -25,3 +27,5 @@ class BlogTest(ApplicationTestCase(app)):
     def testBlogEntryRequest(self):
         resp = self.application.get('/blog/1982/awesome/first-blog-post')
         self.assertResponseBodyContains(resp, "super awesome")
+
+        # print >>sys.stdout, resp.normal_body
