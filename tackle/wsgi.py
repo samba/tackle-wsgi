@@ -157,7 +157,7 @@ class WSGIRoute(object):
     @cached_property
     def template(self):
         base = self.RE_PARSE_PATH.sub(r"{\1}", self.path)
-        return striplast('$', stripfirst('^', base))
+        return base.lstrip('^').rstrip('$')
 
     @cached_property
     def matchpattern(self):
@@ -167,7 +167,9 @@ class WSGIRoute(object):
                 return '(?P<%s>%s)' % (name, (pattern or '[^/]+'))
             else:
                 return '(%s)' % (pattern or '[^/]+')
-        return re.compile(self.RE_PARSE_PATH.sub(_sub, self.path))
+        rexp = self.path.lstrip('^').rstrip('$')
+        rexp = '^%s$' % self.RE_PARSE_PATH.sub(_sub, rexp)
+        return re.compile(rexp)
 
     def match(self, path):
         m = self.matchpattern.match(path)
@@ -223,11 +225,17 @@ class WSGIApplication(object):
             elif isinstance(route, tuple):
                 self.router.register(self.route_class(*route))
 
-    def route(self, path, **opts):
+
+    def route(self, path, *args, **opts):
         def _decorator(handler):
             route = self.route_class(path, handler, **opts)
             self.router.register(route)
             return route
+
+        if len(args) and callable(args[-1]):  # called with full arguments.
+            return _decorator(args[-1])
+
+        # else: called as decorator
         return _decorator
 
 
