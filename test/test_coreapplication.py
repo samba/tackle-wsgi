@@ -7,8 +7,6 @@ from runner import ApplicationTestCase, debug_on, AppError
 app = WSGIApplication()
 
 
-
-
 @app.route('/test/<anything>')
 class SecondRequestHandler(RequestHandler):
     def get(self, anything = None):

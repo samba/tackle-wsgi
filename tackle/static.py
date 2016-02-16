@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 
 import os
-import re
 import hashlib
 import datetime
-import json
-from wsgi import RequestInfo, sendfile
-from middleware import Middleware
+
+
+from webob import Response, Request
+
+from middleware import middleware
 
 
 def md5(*text):
@@ -16,67 +17,57 @@ def md5(*text):
     return val.hexdigest()
 
 
-class StoredResponse(object):
-    iso8601 = '%Y-%m-%dT%H:%M:%S.%f'
+def capture_response(app, environ):
+    request = (environ if isinstance(environ, Request) else Request(environ))
+    return request.get_response(app)
 
-    def __init__(self, environ, headers = []):
-        self.udpated_at = None
-        self.headers = headers
-        self.status = None
-        self.content = None
-        self.environ = environ
 
-    def start_response(self, status, headers):
-        self.status = status
-        self.headers = (headers)
-        self.updated_at = datetime.datetime.now()
 
-    def serialize(self, filename, content):
-        filename_headers = '%s.headers.txt' % filename
-        data = {
-            'updated_at': self.updated_at.strftime(self.iso8601),
-            'status': self.status,
-            'headers': self.headers
-        }
-        json.dump(data, open(filename_headers, 'wb'))
-        with open(filename, 'wb') as output:
-            for line in content:
-                output.write(line)
+class StoredResponse(Response):
+    """Load/save responses from/to local storage.
 
-        # prepare for retransmission
-        self.content = sendfile(self.environ, filename)
+        - Use StoredResponse.from_file(fp) to load; a class method.
+        - Use StoredResponse().to_file(fp) to save; an instance method.
+    """
 
-    def is_expired(self, ttl=3600):
-        now = datetime.datetime.now()
-        return (datetime.timedelta(seconds = ttl) + self.updated_at) < now
+    def to_file(self, fp):
+        fp.write('HTTP/1.1 %s\n' % self.status)
+        for k, v in self.headerlist:
+            fp.write('%s: %s\n' % (k, v))
+        fp.write('\n')
+        fp.write(self.body)
 
     @classmethod
-    def load(cls, filename, environ):
-        filename_headers = '%s.headers.txt' % filename
-        data = json.load(open(filename_headers, 'rb'))
-        ts = data.get('updated_at', None)
-        headers = data.get('headers', [])
-        instance = cls(environ, headers = [tuple(i) for i in headers])
-        instance.status = data.get('status', None)
-        instance.updated_at = datetime.datetime.strptime(ts, cls.iso8601)
-        instance.content = sendfile(environ, filename)
+    def patch(cls, instance):
+        if isinstance(instance, Response):
+            class _derived_(cls, instance.__class__):
+                pass
+            instance.__class__ = _derived_
         return instance
 
-    def respond(self, start_response, send_body):
-        start_response(str(self.status), self.headers)
-        return self.content if send_body else []
+    @classmethod
+    def intercept(cls, app, environ):
+        return cls.patch(capture_response(app, environ))
 
 
-class StaticCacheMiddleware(Middleware):
 
-    # TODO: pivot to using webob.Response.from_file; integrates
-    #   - HTTP status line
-    #   - HTTP headers
-    #   - HTTP body content
+class UTC(datetime.tzinfo):
 
-    RE_HEADER_FORMAT = re.compile(r'([A-Za-z0-9_-]+):\s+([^\n]+)')
+    ZERO = datetime.timedelta(0)
 
-    def __init__(self, cachepath = ('.static', 'cache'), ttl=3600):
+    def utcoffset(self, dt):
+        return self.ZERO
+
+    def tzname(self, dt):
+        return 'UTC'
+
+    def dst(self, dt):
+        return self.ZERO
+
+
+class StaticCacheMiddleware(object):
+
+    def __init__(self, cachepath=('.static', 'cache'), ttl=3600):
 
         if isinstance(cachepath, (list, tuple)):
             cachepath = os.path.join(*cachepath)
@@ -84,31 +75,46 @@ class StaticCacheMiddleware(Middleware):
         self.pool = os.path.join(os.getcwd(), cachepath)
         self.ttl_default = ttl
 
-        super(StaticCacheMiddleware, self).__init__(internal = True)
-
         try:
             os.makedirs(self.pool)
         except OSError, e:
             pass
 
+    @middleware
+    def __call__(self, *args, **kwargs):
+        return self.wsgi(*args, **kwargs)
 
-    def wsgi_request(self, environ, start_response, app):
-        info = RequestInfo(environ)
 
-        if info.method not in ('get', 'head'):
-            pass
+    def generate_path(self, request):
+        ident = md5(request.path_qs,
+                    str(request.accept),
+                    str(request.accept_language),
+                    str(request.accept_encoding))
+        return os.path.join(self.pool, ident)
 
-        ident = md5(info.path_qs)
-        source_file = os.path.join(self.pool, ident)
+    def wsgi(self, req, app):
+        if req.method not in ('HEAD', 'GET'):
+            return app
+
+        source_file = self.generate_path(req)
+        response = None
+        now = datetime.datetime.now(UTC())
 
         if os.path.isfile(source_file):
-            response = StoredResponse.load(source_file, environ)
-        else:
-            response = StoredResponse(environ)
-            result = app(environ, response.start_response)
-            response.serialize(source_file, result)
+            response = StoredResponse.from_file(open(source_file, 'rb'))
+            expired = (response.expires < now)
+            if expired:
+                response = None
 
-        return response.respond(start_response, (info.method == 'get'))
+        if response is None:
+            response = StoredResponse.intercept(app, req)
+            if response.status_int in (200,):
+                response.last_modified = response.last_modified or now
+                if not response.expires:
+                    response.cache_expires = self.ttl_default
+                response.to_file(open(source_file, 'wb'))
+
+        return response
 
 
 

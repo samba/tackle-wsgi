@@ -5,7 +5,7 @@ from tackle import RedirectionMiddleware, Shortener
 from runner import ApplicationTestCase, debug_on
 
 from tackle.decorator import static
-
+from tackle.static import StaticCacheMiddleware
 
 def FixedResponseHandler(text):
     class derived(RequestHandler):
@@ -16,6 +16,8 @@ def FixedResponseHandler(text):
 
 @debug_on(AttributeError)
 def prepareApplication():
+
+    cache = StaticCacheMiddleware(ttl=300)
 
     redir = RedirectionMiddleware(
         (r'/redir_test', 'http://google.com/search?q=redirected')
@@ -40,6 +42,7 @@ def prepareApplication():
         def head(self, *a, **kw):
             return self.get(*a, **kw)
 
+    app = cache(app)
     app = shortener(app)
     app = redir(app)
 
@@ -68,6 +71,7 @@ class DecoratorTest(ApplicationTestCase(prepareApplication())):
         self.assertResponseBodyContains(resp, 'This is a test.')
         self.assertRegexpMatches(cache_ctrl, r'max-age=600')
 
+    @debug_on(AssertionError, TypeError)
     def testStaticRequestHEAD(self):
         """Validate that HEAD request DOES NOT yield file body."""
         resp = self.application.head('/s/600/test.txt', status=200)
