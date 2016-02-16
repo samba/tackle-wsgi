@@ -4,7 +4,6 @@ from wsgi import (
     WSGIService,
     WSGIApplication,
     WSGIRequestHandler as RequestHandler,
-    BuildApplication,
     sendfile
 )
 

@@ -16,6 +16,9 @@ The name: tackle, [the equipment used to in a particular sport](http://www.thefr
 
 - webob
 
+## Development Status
+
+Note the version number. Still _very_ early in development.
 
 # Features
 

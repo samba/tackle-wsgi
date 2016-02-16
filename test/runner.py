@@ -13,6 +13,8 @@ import functools
 import traceback
 
 
+from webtest import AppError
+
 def dirname_up(path, howmany = 1):
     while (howmany > 0):
         path = os.path.dirname(path)
@@ -60,6 +62,11 @@ def ApplicationTestCase(app):
     class TestCase(unittest.TestCase):
         application = TestApp(app)
 
+        @debug_on(AppError, AttributeError, IndexError, KeyError, ValueError)
+        def get(self,  *args, **opts):
+            return self.application.get(*args, **opts)
+
+
         def assertResponseStatus(self, response, *status):
             self.assertIn(response.status_int, status)
 
@@ -71,6 +78,9 @@ def ApplicationTestCase(app):
 
         def assertResponseBodyContains(self, response, content):
             self.assertIn(content, response.normal_body)
+
+        def assertResponseBodyNotContains(self, response, content):
+            self.assertNotIn(content, response.normal_body)
 
     return TestCase
 
@@ -87,7 +97,7 @@ def coverage():
     finally:
         cov.stop()
         cov.save()
-        cov.report(omit = r'*/lib/python*')
+        cov.report(omit = (r'*/lib/python*', r'*/runner.py'))
 
 
 def runtests(paths, top = None, verbosity = 2):

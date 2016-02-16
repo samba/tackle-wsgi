@@ -29,9 +29,10 @@ class MainRequestHandler(RequestHandler):
 
         return whatever or 'NOT GIVEN'
 
-redir = RedirectionMiddleware(app)
+redir = RedirectionMiddleware()
 redir.redirect(r'^/wompwompwomp', 'http://google.com/search?q=womp')
 
+app = redir(app)
 
 
 class TestCaseAlpha(ApplicationTestCase(app)):

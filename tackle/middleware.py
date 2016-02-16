@@ -5,7 +5,7 @@
 
 from tackle.wsgi import sendfile
 from tackle.wsgi import RequestInfo
-from tackle.wsgi import WSGIMiddlewareBase
+from tackle.wsgi import apply_middleware, middleware_aggregate
 from tackle.wsgi import logger
 from tackle.util import stripfirst
 
@@ -14,9 +14,46 @@ import re
 import urlparse
 
 
-class Middleware(WSGIMiddlewareBase):
+class Middleware(object):
 
-    pass
+    @staticmethod
+    def prepend_wsgi(handler, downstream):
+        def intercept(environ, start_response):
+            result = handler(environ, start_response)
+            if result is not None:
+                return result
+            else:
+                return downstream(environ, start_response)
+        return intercept
+
+    @staticmethod
+    def append_wsgi(handler, upstream):
+        def afterall(environ, start_response):
+            uresult = upstream(environ, start_response)
+            if uresult is not None:
+                uresult = handler(environ, start_response, uresult)
+            return uresult
+        return afterall
+
+
+    def __init__(self, *args, **opts):
+        self.arguments = args
+        self.options = opts
+
+    def __call__(self, wsgi):
+        """Integration hook to intercept and attach WSGI middleware, optionally
+            as a method decorator.
+        """
+        app = wsgi
+        run_before = getattr(self, 'wsgi_request', None)
+        run_after = getattr(self, 'wsgi_response', None)
+        if callable(run_before):
+            app = self.prepend_wsgi(run_before, app)
+        if callable(run_after):
+            app = self.append_wsgi(run_after, app)
+        return app
+
+
 
 
 
@@ -34,19 +71,21 @@ class RedirectionMiddleware(Middleware):
     """
 
 
-    def middleware_init(self, retain_path = False, retain_query = True):
+    def __init__(self, _map = None, retain_path = False, retain_query = True):
         # logger.info('middleware_init %r' % self)
         self.retain_path = retain_path
         self.retain_query = retain_query
         self._map = []
+        if isinstance(_map, (list, tuple)):
+            for m in _map:
+                self.redirect(*m)
 
     def redirect(self, detect, target, permanent = False):
         self._map.append((re.compile(detect), target, permanent))
 
-
-
-    def run_before(self, environ, start_response):
+    def wsgi_request(self, environ, start_response):
         info = RequestInfo(environ)
+
         status = [ "302 Temporary Redirect", "301 Permanent Redirect" ]
 
         for pattern, target, permanent in self._map:
@@ -82,9 +121,9 @@ class StaticFileMiddleware(Middleware):
         (r'\.css$', 'text/css', default_cache_life)
     ]
 
-    def middleware_init(self, *args, **opts):
-        self.static_path = args[0] if len(args) else None
-        self.static_prefix = args[1] if len(args) > 1 else None
+    def __init__(self, local_path = None, static_prefix = None):
+        self.static_path = local_path
+        self.static_prefix = static_prefix
 
 
     def get_headers(self, filename):
@@ -105,7 +144,7 @@ class StaticFileMiddleware(Middleware):
                 return duration
         return cls.default_cache_life
 
-    def run_before(self, environ, start_response):
+    def wsgi_request(self, environ, start_response):
         info = RequestInfo(environ)
         static_path, prefix = self.static_path, self.static_prefix
         path = info.path
@@ -142,7 +181,7 @@ class Shortener(RedirectionMiddleware):
     """
 
 
-    def middleware_init(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         self.basepath = kwargs.pop('basepath', '/')
         super(Shortener, self).__init__(*args, **kwargs)
 
