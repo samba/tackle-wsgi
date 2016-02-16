@@ -1,18 +1,6 @@
 import threading
 
 
-def stripfirst(char, text):
-    while text.startswith(char):
-        text = text[len(char):]
-    return text
-
-
-def striplast(char, text):
-    while text.endswith(char):
-        text = text[:-len(char)]
-    return text
-
-
 class cached_property(object):
     """A decorator that converts a function into a lazy property.
 
@@ -62,3 +50,51 @@ class cached_property(object):
                 obj.__dict__[self.__name__] = value
 
             return value
+
+
+def apply_middleware(target, *methods):
+    """Integrate other middleware components per the basic WSGI convention.
+
+        Common format:
+
+            @middleware3
+            @middleware2
+            @middleware_decorator(..args...)
+            def handler(environ, start_response):
+                pass
+
+        Where the decorator convention can't be sensibly applied, this lets us
+        integrate a sequence of them nonetheless:
+
+            # a decorator here would raise SyntaxError
+            app = WSGIApplication(...)
+
+            app = apply_middleware(
+                app,
+                middleware_decorator(...args...),  # receives app
+                middleware2, # receives middleware_decorator(app)
+                middleware3, # receives middleware2(...)
+                ...
+            )
+
+        effectively applying middleware in the reverse of decorator style.
+
+    """
+    for m in methods:
+        target = m(target)
+    return target
+
+
+def middleware_aggregate(*methods):
+    """Apply a collection of preconfigured middleware.
+        Useful when the same collection of middlewares are applied in several
+        handlers, etc.
+
+        Usage
+
+            middleware_aggregate()
+
+    """
+    def _apply(app):
+        return apply_middleware(app, *methods)
+    return _apply

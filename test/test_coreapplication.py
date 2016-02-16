@@ -2,7 +2,7 @@
 
 from tackle import WSGIApplication, RequestHandler
 from tackle import RedirectionMiddleware
-from runner import ApplicationTestCase
+from runner import ApplicationTestCase, debug_on, AppError
 
 app = WSGIApplication()
 
@@ -29,8 +29,8 @@ class MainRequestHandler(RequestHandler):
 
         return whatever or 'NOT GIVEN'
 
-redir = RedirectionMiddleware()
-redir.redirect(r'^/wompwompwomp', 'http://google.com/search?q=womp')
+redir = RedirectionMiddleware('/')
+redir.redirect('wompwompwomp', 'http://google.com/search?q=womp')
 
 app = redir(app)
 
@@ -53,7 +53,7 @@ class TestCaseAlpha(ApplicationTestCase(app)):
         resp = self.application.post('/', {'another': '2'}, status=404)
         self.assertResponseBodyIs(resp, 'NOT GIVEN')
 
-
+    @debug_on(ValueError, AppError)
     def testRedirect(self):
         resp = self.application.get('/wompwompwomp', status=302)
         self.assertResponseStatus(resp, 302)

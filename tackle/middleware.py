@@ -1,127 +1,87 @@
+"""WSGI Middlware layers."""
+
 # WSGI middleware layers.
 # Copyright (c) 2015, Sam Briesemeister
 # Licensed under the Python Software Foundation License.
 
-
-# from tackle.wsgi import sendfile
-from tackle.wsgi import RequestInfo
-from tackle.wsgi import WSGIRequestHandler
-# from tackle.wsgi import apply_middl eware, middleware_aggregate
-# from tackle.wsgi import logger
-from tackle.util import stripfirst
-
+from webob.dec import wsgify
 
 import re
 import urlparse
 
 
+RE_EMPTY = re.compile(r'^$')
 
 
-
-class Middleware(object):
-
-    @staticmethod
-    def prepend_wsgi(handler, downstream, call_app_internally = False):
-        def intercept(environ, start_response):
-            if call_app_internally:
-                result = handler(environ, start_response, downstream)
-            else:
-                result = handler(environ, start_response)
-            if result is not None:
-                return result
-            else:
-                return downstream(environ, start_response)
-        return intercept
-
-    @staticmethod
-    def append_wsgi(handler, upstream):
-        def afterall(environ, start_response):
-            uresult = upstream(environ, start_response)
-            if uresult is not None:
-                uresult = handler(environ, start_response, uresult)
-            return uresult
-        return afterall
+def is_regex(expr):
+    return type(RE_EMPTY) is type(expr)
 
 
-    def __init__(self, *args, **opts):
-        self.arguments = args
-        self.options = opts
+def middleware(handler):
+    """Wrap a function to be called with correct binding when WebOb's
+        wsgify.middleware hands off a request. The key here is to bind the
+        method before wsgify wraps it.
+    """
+    def method(self, *args, **kwargs):
+        method = handler.__get__(self, self.__call__)
+        return wsgify.middleware(method, *args, **kwargs)
 
-    def __call__(self, wsgi):
-        """Integration hook to intercept and attach WSGI middleware, optionally
-            as a method decorator.
-        """
-        app = wsgi
-        run_before = getattr(self, 'wsgi_request', None)
-        run_after = getattr(self, 'wsgi_response', None)
-        run_internal = getattr(self, 'options', {}).pop('internal', False)
-        if callable(run_before):
-            app = self.prepend_wsgi(run_before, app,
-                                    call_app_internally = run_internal)
-        if callable(run_after):
-            app = self.append_wsgi(run_after, app)
+    return method
+
+
+class RedirectionMiddleware(object):
+
+    def __init__(self, *routes, **kwargs):
+        self.prefix = kwargs.pop('prefix', None)
+        if len(routes) and isinstance(routes[0], basestring):
+            self.prefix = routes[0]
+            routes = list(routes)[1:]
+        self.routes = [self.compile_route(*r) for r in routes]
+        self.retain_path = kwargs.pop('retain_path', False)
+        self.retain_query = kwargs.pop('retain_query', True)
+
+    def compile_route(self, token, target, permanent=False):
+        prefix = self.prefix or ''
+
+        if isinstance(token, basestring):
+            if not token.startswith('^'):
+                token = '^%s%s' % (prefix, token)
+            if not token.endswith('$'):
+                token = '%s$' % (token)
+            pattern = re.compile(token)
+
+        elif is_regex(token):
+            pattern = token
+
+        return (pattern, target, permanent)
+
+    def redirect(self, token, target, permanent=False):
+        self.routes.append(self.compile_route(token, target, permanent))
+
+    def wsgi(self, req, app):
+        path = req.path
+
+        for expr, target, permanent in self.routes:
+            match = expr.match(path)
+            if match:
+                location = match.expand(target)
+                parts = list(urlparse.urlsplit(location))
+
+                if self.retain_query:
+                    parts[3] = (req.query_string or parts[3]).lstrip('?')
+                if self.retain_path:
+                    parts[2] = req.path
+
+                location = urlparse.urlunsplit(parts)
+                req.response.location = location
+                req.response.status = (301 if permanent else 302)
+                return req.response
+
         return app
 
-
-
-
-
-class RedirectionMiddleware(Middleware):
-    """ WSGI Middleware to intercept requests that should be redirected.
-        Supports Regular Expressions patterns for extracting parts from
-        URLs intercepted, and format strings for target URLs.
-
-
-        Usage:
-            redir = RedirectionMiddleware()
-            redir.redirect('^/cdn/(.*)', 'http://cdn.host.com/{1}')
-            app = redir.wsgi(upstream_app)
-
-    """
-
-
-    def __init__(self, _map = None, retain_path = False, retain_query = True):
-        # logger.info('middleware_init %r' % self)
-        self.retain_path = retain_path
-        self.retain_query = retain_query
-        self._map = []
-        if isinstance(_map, (list, tuple)):
-            for m in _map:
-                self.redirect(*m)
-
-    def redirect(self, detect, target, permanent = False):
-        self._map.append((re.compile(detect), target, permanent))
-
-    def wsgi_request(self, environ, start_response):
-        info = RequestInfo(environ)
-
-        status = [ "302 Temporary Redirect", "301 Permanent Redirect" ]
-
-        for pattern, target, permanent in self._map:
-            match = pattern.match(info.path)
-            if match is not None:
-                args, kwargs = match.groups(), match.groupdict()
-                parts = list(urlparse.urlsplit(target))
-                if self.retain_query:
-                    parts[3] = (info.query or parts[3]).lstrip('?')
-                if self.retain_path:
-                    parts[2] = info.path
-                kwargs.update({
-                    'hostname': info.hostname,
-                    'path': info.path,
-                    'query': info.query,
-                    'path_qs': info.path_qs
-                })
-                result = urlparse.urlunsplit(parts).format(*args, **kwargs)
-                start_response(status[int(permanent)], [('Location', result)])
-                return ['Redirecting to %s' % result]
-
-
-
-
-
-
-
+    @middleware
+    def __call__(self, *args, **kwargs):
+        return self.wsgi(*args, **kwargs)
 
 
 class Shortener(RedirectionMiddleware):
@@ -134,12 +94,7 @@ class Shortener(RedirectionMiddleware):
             shortener.redirect('abc', 'http://abc.com')
 
     """
-
-
     def __init__(self, *args, **kwargs):
-        self.basepath = kwargs.pop('basepath', '/')
+        kwargs['prefix'] = kwargs.pop('basepath', '/')
         super(Shortener, self).__init__(*args, **kwargs)
 
-    def redirect(self, reference, destination_url, permanent = False):
-        pattern = self.basepath + reference + '$'
-        super(Shortener, self).redirect(pattern, destination_url, permanent)

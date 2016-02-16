@@ -3,12 +3,10 @@ from util import cached_property
 from wsgi import (
     WSGIService,
     WSGIApplication,
-    WSGIRequestHandler as RequestHandler,
-    sendfile
+    WSGIRequestHandler as RequestHandler
 )
 
 from middleware import (
-    Middleware,
     RedirectionMiddleware,
     Shortener
 )

@@ -1,36 +1,35 @@
+#!/usr/bin/env python
+
+"""Decorator methods to integrate features on request handlers"""
+
 from webob.static import FileApp
 from webob import Response
-from wsgi import  WSGIRequestHandler
+from wsgi import WSGIRequestHandler
 from proxy import ResponseInterceptor
 import os
 
 
-class CacheInterceptor(ResponseInterceptor):
-
-    def intercept(self, response):
-        # logger.info('Marking response %r' % response)
-        self.response.headers.add('X-test', 'true')
+def is_member_handler(args):
+    return len(args) and isinstance(args[0], WSGIRequestHandler)
 
 
-def static(local_path, method = None):
+def get_response(args):
+    return (args[0].response
+            if is_member_handler(args)
+            else Response(conditional_response=True))
+
+
+def static(local_path, method=None):
     """Decorator for methods returning static files.
         The method must return the desired filename within the given path.
     """
-
-    def _cache(response):
-        response.headers.add('X-Test', 'true')
 
     def _apply(handler):
         def action(*args, **kwargs):
             filename = handler(*args, **kwargs)
             filename = os.path.join((local_path or os.getcwd()), filename)
-
-            if (len(args) and isinstance(args[0], WSGIRequestHandler)):
-                response = args[0].response
-            else:
-                response = Response(conditional_response=True)
-            return CacheInterceptor(FileApp(filename), response).wsgi
-            return FileApp(filename)
+            response = get_response(args)
+            return ResponseInterceptor(FileApp(filename), response).wsgi
 
         action.__name__ = handler.__name__
         action.__doc__ = handler.__doc__
@@ -38,15 +37,3 @@ def static(local_path, method = None):
 
     return _apply
 
-
-def cache(lifetime):
-    def _apply(handler):
-        def action(self, *args, **kwargs):
-            result = handler(*args, **kwargs)
-            if isinstance(result, Response):
-                result.cache_expires = lifetime
-            else:
-                self.response.cache_expires = lifetime
-            return result
-        return action
-    return _apply

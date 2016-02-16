@@ -16,61 +16,10 @@ logger.setLevel(logging.DEBUG)
 logger.addHandler(logging.StreamHandler())
 
 
-
-def apply_middleware(target, *methods):
-    """Integrate other middleware components per the basic WSGI convention.
-
-        Common format:
-
-            @middleware3
-            @middleware2
-            @middleware_decorator(..args...)
-            def handler(environ, start_response):
-                pass
-
-        Where the decorator convention can't be sensibly applied, this lets us
-        integrate a sequence of them nonetheless:
-
-            # a decorator here would raise SyntaxError
-            app = WSGIApplication(...)
-
-            app = apply_middleware(
-                app,
-                middleware_decorator(...args...),  # receives app
-                middleware2, # receives middleware_decorator(app)
-                middleware3, # receives middleware2(...)
-                ...
-            )
-
-        effectively applying middleware in the reverse of decorator style.
-
-    """
-    for m in methods:
-        target = m(target)
-    return target
-
-
-def middleware_aggregate(*methods):
-    """Apply a collection of preconfigured middleware.
-        Useful when the same collection of middlewares are applied in several
-        handlers, etc.
-
-        Usage
-
-            middleware_aggregate()
-
-    """
-    def _apply(app):
-        return apply_middleware(app, *methods)
-    return _apply
-
-
-
 class RequestInfo(object):
     """ Simple interface for picking out request components.
         This replicates some behaviors already present within webob.
     """
-
 
     @classmethod
     def gethostname(cls, environ):
@@ -104,54 +53,30 @@ class RequestInfo(object):
 
 
 
-
 class ResponseExtension(Response):
 
     default_conditional_response = True
 
-    def set_status(self, code, message = None):
+    def set_status(self, code, message=None):
         if isinstance(message, basestring):
             self.status = '%d %s' % (code, message)
         else:
             self.status = code
 
 
+def compose_route_middleware(expr, handler_class, name=None):
+    assert issubclass(handler_class, WSGIRequestHandler)
+    route = WSGIRoute(expr, handler_class, name=name)
 
+    def wsgi(environ, start_response):
+        match = route.match(expr)
+        if match:
+            req = handler_class(Request(environ), ResponseExtension(), match)
+        else:
+            pass
+        return req(environ, start_response)
 
-class FileWrapper(object):
-
-    def __init__(self, filelike, blksize=8192):
-        if not callable(getattr(filelike, 'read', None)):
-            raise TypeError("wsgi.FileWrapper requires a file-like object")
-
-        self.filelike = filelike
-        self.blksize = blksize
-        if hasattr(filelike, 'close'):
-            self.close = filelike.close
-
-    def __getitem__(self, key):
-        data = self.filelike.read(self.blksize)
-        if data:
-            return data
-        raise IndexError
-
-    def __iter__(self):
-        i = 0
-        while True:
-            try:
-                yield self[i]
-                i = i + 1
-            except IndexError:
-                break
-
-
-
-
-def sendfile(environ, filepath):
-    handler = environ.get('wsgi.file_wrapper', FileWrapper)
-    return handler(open(filepath, 'rb'))
-
-
+    return wsgi
 
 
 class WSGIRequestHandler(object):
@@ -167,7 +92,7 @@ class WSGIRequestHandler(object):
         self.arguments = self.match_arguments(match)
 
     def sendfile(self, filename):
-        return sendfile(self.environ, filename)
+        return FileApp(filename)
 
     @classmethod
     def match_arguments(cls, match):
@@ -192,6 +117,7 @@ class WSGIRequestHandler(object):
 
     def __call__(self, environ, start_response):
         method = getattr(self, self.request.method.lower(), None)
+        environ['wsgiorg.routing_args'] = self.arguments
         self.environ = environ
 
         if not callable(method):
@@ -201,7 +127,7 @@ class WSGIRequestHandler(object):
             args, kwargs = self.arguments
             result = method.__call__(*args, **kwargs)
 
-            logger.info('Request %r yields %r', self.request.path_qs, result)
+            # logger.info('Request %r yields %r', self.request.path_qs, result)
 
             if isinstance(result, self.response_types) or callable(result):
                 return result(environ, start_response)
