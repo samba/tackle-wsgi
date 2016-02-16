@@ -4,3 +4,5 @@ dist
 build
 *.egg-info
 README.txt
+.static
+.coverage

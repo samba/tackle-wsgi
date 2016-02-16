@@ -5,7 +5,7 @@
 
 from webob import exc as exceptions
 from webob import Request, Response
-
+from webob.static import (FileApp, DirectoryApp)
 from util import cached_property
 
 import re
@@ -98,9 +98,16 @@ class RequestInfo(object):
     def path_qs(self):
         return self.path + self.query
 
+    @property
+    def method(self):
+        return self.environ.get('REQUEST_METHOD', 'GET').lower()
+
+
 
 
 class ResponseExtension(Response):
+
+    default_conditional_response = True
 
     def set_status(self, code, message = None):
         if isinstance(message, basestring):
@@ -152,6 +159,8 @@ class WSGIRequestHandler(object):
     pass_all_match_groups = False
     environ = None
 
+    response_types = (Response, FileApp, DirectoryApp)
+
     def __init__(self, request, response, match):
         self.request = request
         self.response = response
@@ -190,11 +199,17 @@ class WSGIRequestHandler(object):
 
         else:
             args, kwargs = self.arguments
-            # logger.info('Request arguments, %r, %r' % (args, kwargs))
             result = method.__call__(*args, **kwargs)
 
+            logger.info('Request %r yields %r', self.request.path_qs, result)
+
+            if isinstance(result, self.response_types) or callable(result):
+                return result(environ, start_response)
+
             if isinstance(result, basestring):
-                self.response.write(result)
+                self.response.text = unicode(result)
+            elif result:
+                self.response.app_iter = result
 
             return self.response(environ, start_response)
 
@@ -333,7 +348,8 @@ class WSGIApplication(object):
             if issubclass(handler, self.requesthandler_class):
                 # Create an instance of the handler's subclass
                 handler = (handler(request, ResponseExtension(), match))
-                # Invoke the instance's __call__ method
+                # Invoke the instance's __call__ method; it should be compliant
+                # with WSGI invocation convention.
                 return handler(environ, start_response)
 
             elif callable(handler):
@@ -342,6 +358,8 @@ class WSGIApplication(object):
         except exceptions.HTTPException, e:
             response = e  # WebOb provides response-handling on exceptions.
 
+        # The response here is expected to be callable, per WSGI convention.
+        # WebOb's Response objects are compatible.
         return response(environ, start_response)
 
     def __call__(self, environ, start_response):

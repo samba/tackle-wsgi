@@ -10,7 +10,6 @@ from wsgi import (
 from middleware import (
     Middleware,
     RedirectionMiddleware,
-    StaticFileMiddleware,
     Shortener
 )
 
