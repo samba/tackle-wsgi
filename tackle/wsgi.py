@@ -7,7 +7,6 @@ from webob import exc as exceptions
 from webob import Request, Response
 
 from util import cached_property
-from util import stripfirst, striplast
 
 import re
 import logging
@@ -159,10 +158,32 @@ class WSGIRequestHandler(object):
 class WSGIRoute(object):
     RE_PARSE_PATH = re.compile(r'<([a-zA-Z_]+)?(?::([^>]+))?>')
 
-    def __init__(self, path, handler, name = None):
+    @cached_property
+    def route_sequence_score(self):
+        path_template = self.path.lstrip('^').rstrip('$')
+
+        # A fully-anchored single-slash (root) should be negated early on.
+        if(path_template == '/' and self.path.endswith('$')):
+            return 5
+
+        # Always regard a naked "/" as a fallback
+        if (path_template == '/'):
+            return 1E1000
+
+        field_count = 0
+        for m in self.RE_PARSE_PATH.finditer(path_template):
+            field_count = field_count + 1
+
+        # A calculated store derived from route specificity
+        return (len(self.path) * field_count)
+
+
+
+    def __init__(self, path, handler, name = None, allow_prefix = False):
         self.name = name
         self.path = path
         self.handler = handler
+        self.prefix_match = (allow_prefix) and (not path.endswith('$'))
 
     @cached_property
     def template(self):
@@ -171,14 +192,20 @@ class WSGIRoute(object):
 
     @cached_property
     def matchpattern(self):
-        def _sub(match):
+
+        def _sub(match): # converts field expressions to regex notation
             name, pattern = match.group(1, 2)
             if name:
                 return '(?P<%s>%s)' % (name, (pattern or '[^/]+'))
             else:
                 return '(%s)' % (pattern or '[^/]+')
+
         rexp = self.path.lstrip('^').rstrip('$')
-        rexp = '^%s$' % self.RE_PARSE_PATH.sub(_sub, rexp)
+        rexp = self.RE_PARSE_PATH.sub(_sub, rexp)  # convert template fields
+
+        end_achor = (r'' if (self.prefix_match) else r'$')
+        rexp = '^%s%s' % (rexp, end_achor)
+
         return re.compile(rexp)
 
     def match(self, path):
@@ -210,7 +237,7 @@ class WSGIRouter(object):
         return self.named_routes[name].template.format(**props)
 
     def dispatch(self, environ, request):
-        for r in self.routes:
+        for r in sorted(self.routes, key = lambda x: x.route_sequence_score):
             match, handler = r.match(request.path)
             if match:
                 return match, handler
@@ -228,13 +255,12 @@ class WSGIApplication(object):
     route_class = WSGIRoute
 
     def __init__(self, *routes, **options):
-        self.wsgi_stack = [ self.wsgi_main ]
         self.router = self.router_class(self)
         for route in routes:
             if isinstance(route, self.route_class):
                 self.router.register(route)
             elif isinstance(route, tuple):
-                self.router.register(self.route_class(*route))
+                self.router.register(self.route_class(*route, **options))
 
 
     def route(self, path, *args, **opts):

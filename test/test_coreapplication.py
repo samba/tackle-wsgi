@@ -7,7 +7,15 @@ from runner import ApplicationTestCase
 app = WSGIApplication()
 
 
-@app.route(r'^/$')  # NOTE: these are anchored to match only the root...
+
+
+@app.route('/test/<anything>')
+class SecondRequestHandler(RequestHandler):
+    def get(self, anything = None):
+        return "(%s)" % anything
+
+
+@app.route(r'/', allow_prefix = True)
 class MainRequestHandler(RequestHandler):
     def get(self):
         return 'Hi there!'
@@ -21,14 +29,6 @@ class MainRequestHandler(RequestHandler):
 
         return whatever or 'NOT GIVEN'
 
-
-@app.route('/test/<anything>')
-class SecondRequestHandler(RequestHandler):
-    def get(self, anything = None):
-        return "(%s)" % anything
-
-
-
 redir = RedirectionMiddleware(app)
 redir.redirect(r'^/wompwompwomp', 'http://google.com/search?q=womp')
 
@@ -40,6 +40,10 @@ class TestCaseAlpha(ApplicationTestCase(app)):
         self.assertResponseStatus(resp, 200)
         self.assertResponseBodyIs(resp, "Hi there!")
 
+    def testFallbackHandler(self):
+        resp = self.application.get('/two', status=200)
+        self.assertResponseBodyIs(resp, "Hi there!")
+
     def testPostQuery(self):
         resp = self.application.post('/', {'whatever': '2'}, status = 201)
         self.assertResponseBodyIs(resp, '2')
@@ -47,6 +51,7 @@ class TestCaseAlpha(ApplicationTestCase(app)):
     def testPostQueryInvalid(self):
         resp = self.application.post('/', {'another': '2'}, status=404)
         self.assertResponseBodyIs(resp, 'NOT GIVEN')
+
 
     def testRedirect(self):
         resp = self.application.get('/wompwompwomp', status=302)
