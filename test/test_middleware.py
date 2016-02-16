@@ -23,7 +23,7 @@ def prepareApplication():
         (r'/redir_test', 'http://google.com/search?q=redirected')
     )
 
-    shortener = Shortener(basepath = '/s/')
+    shortener = Shortener(basepath='/s/')
     shortener.redirect('123', 'http://google.com/search?q=onetwothree')
 
     app = WSGIApplication(debug=True)
@@ -66,7 +66,7 @@ class DecoratorTest(ApplicationTestCase(prepareApplication())):
     @debug_on(AssertionError, TypeError)
     def testStaticRequest(self):
         """Validate that GET request produces static file body & cache param."""
-        resp = self.application.get('/s/600/test.txt', status=200)
+        resp = self.application.get('/s/600/test.txt?test=1', status=200)
         cache_ctrl = resp.headers.get('Cache-Control')
         self.assertResponseBodyContains(resp, 'This is a test.')
         self.assertRegexpMatches(cache_ctrl, r'max-age=600')
@@ -74,7 +74,7 @@ class DecoratorTest(ApplicationTestCase(prepareApplication())):
     @debug_on(AssertionError, TypeError)
     def testStaticRequestHEAD(self):
         """Validate that HEAD request DOES NOT yield file body."""
-        resp = self.application.head('/s/600/test.txt', status=200)
+        resp = self.application.head('/s/600/test.txt?test=1', status=200)
         self.assertResponseBodyNotContains(resp, 'This is a test.')
 
     def testRemainingRoute(self):

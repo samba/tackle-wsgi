@@ -4,11 +4,9 @@ import os
 import hashlib
 import datetime
 
-
 from webob import Response, Request
-
 from middleware import middleware
-
+# from wsgi import logger
 
 def md5(*text):
     val = hashlib.md5(text[0])
@@ -32,10 +30,13 @@ class StoredResponse(Response):
 
     def to_file(self, fp):
         fp.write('HTTP/1.1 %s\n' % self.status)
+        if ('Content-Length' not in self.headerlist):
+            self.headers['Content-Length'] = str(len(self.body))
         for k, v in self.headerlist:
             fp.write('%s: %s\n' % (k, v))
         fp.write('\n')
         fp.write(self.body)
+        fp.write('\n\n')
 
     @classmethod
     def patch(cls, instance):
@@ -86,11 +87,12 @@ class StaticCacheMiddleware(object):
 
 
     def generate_path(self, request):
+        method = request.method.lower()
         ident = md5(request.path_qs,
                     str(request.accept),
                     str(request.accept_language),
                     str(request.accept_encoding))
-        return os.path.join(self.pool, ident)
+        return os.path.join(self.pool, '%s.%s' % (ident, method))
 
     def wsgi(self, req, app):
         if req.method not in ('HEAD', 'GET'):
@@ -103,16 +105,27 @@ class StaticCacheMiddleware(object):
         if os.path.isfile(source_file):
             response = StoredResponse.from_file(open(source_file, 'rb'))
             expired = (response.expires < now)
-            if expired:
+            if expired:  # cache has expired, so reset.
                 response = None
+            else:
+                return response
 
-        if response is None:
+        if response is None:  # the cache was either not found, or invalid.
             response = StoredResponse.intercept(app, req)
+
+            # Only cache valid resource responses (200)
             if response.status_int in (200,):
                 response.last_modified = response.last_modified or now
                 if not response.expires:
-                    response.cache_expires = self.ttl_default
-                response.to_file(open(source_file, 'wb'))
+
+                    if callable(self.ttl_default):
+                        ttl = self.ttl_default(req)
+                    else:
+                        ttl = self.ttl_default
+                    response.cache_expires = ttl
+
+                if response.expires:  # don't cache content lacking expiration
+                    response.to_file(open(source_file, 'wb'))
 
         return response
 
